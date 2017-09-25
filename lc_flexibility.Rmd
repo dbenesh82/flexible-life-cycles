@@ -1,0 +1,221 @@
+---
+title: "Life cycle flexibility"
+output: github_document
+---
+
+**Background**: I use a [database](http://onlinelibrary.wiley.com/doi/10.1002/ecy.1680/suppinfo) of helminth (parasitic worm) life cycles to examine the diversity of hosts exploited by these parasites. 
+
+
+```{r, message=FALSE, warning=FALSE}
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(RColorBrewer)
+
+options(stringsAsFactors = FALSE)
+
+#set theme for plots
+theme.o <- theme_update(axis.text = element_text(colour="black", size = 15),
+                        axis.title = element_text(colour="black", size = 18, face = "bold", lineheight=0.25),
+                        axis.ticks = element_line(colour="black"),
+                        panel.border = element_rect(colour = "black",fill=NA),
+                        panel.grid.minor=element_blank(),
+                        panel.grid.major=element_line(color="gray",linetype = "dotted"),
+                        panel.background= element_rect(fill = NA))
+
+# import data
+dataH <- read.csv(file="data/CLC_database_hosts.csv", header = TRUE, sep=",")
+dataL <- read.csv(file="data/CLC_database_lifehistory.csv", header = TRUE, sep=",")
+```
+
+Wrangling
+
+```{r, message=FALSE, warning=FALSE}
+#mosaic.data <- select(dataH, Parasite.species, Host.no, Stage, Def.int, Facultative)%>%distinct()
+
+maxLCL <- group_by(dataH, Parasite.species)%>%
+  summarize(maxLCL = max(Host.no))
+minLCL <- filter(dataH, Facultative == "no")%>%
+  group_by(Parasite.species)%>%
+  summarize(minLCL = length(unique(Host.no)))
+
+dataH <- left_join(dataH, maxLCL)
+dataH <- left_join(dataH, minLCL)
+```
+
+```{r}
+# reduce to species level for plot
+plot.dat <- select(dataH, Parasite.species, minLCL, maxLCL)%>%
+  distinct()
+
+plot.dat <- mutate(plot.dat, Flex.cycle = 
+                        if_else(minLCL != maxLCL, "Some hosts\nfacultative", "All hosts\nobligate"),
+                      maxLCL.fac = if_else(maxLCL > 3, "4", as.character(maxLCL)))%>%
+  mutate(maxLCL.fac = factor(maxLCL.fac, labels = c("1", "2", "3", ">3")))
+```
+
+Try a stack bar chart.
+
+```{r, message=FALSE, warning=FALSE}
+ggplot(plot.dat, aes(x=maxLCL.fac, fill=Flex.cycle)) + 
+  geom_bar() +
+  labs(x = "Life cycle length", y = "Number of species")
+```
+
+Try making it proportional. First make proportions table to plot.
+
+```{r}
+mos.prop <- group_by(plot.dat, maxLCL.fac, Flex.cycle)%>%
+  summarize(n = n())
+t <- tapply(mos.prop$n, INDEX = mos.prop$maxLCL.fac, sum)
+
+mos.prop$prop <- mos.prop$n/
+  t[match(mos.prop$maxLCL.fac, names(t))]
+rm(t)
+```
+
+Then plot.
+
+```{r}
+mypalette <- mypalette <- brewer.pal(3, "Accent")
+
+ss <- group_by(mos.prop, maxLCL.fac)%>%summarize(n = sum(n)) # sample size for fig
+
+outfig <- ggplot(mos.prop, 
+                 aes(x = maxLCL.fac, y = prop, fill = Flex.cycle)) + 
+  geom_bar(stat = "identity") +
+  labs(x = "\nLife cycle length", y = "Proportion of species\n") +
+  scale_y_continuous(expand = c(0,0)) +
+  scale_fill_manual(values = mypalette[1:2]) +
+  theme(legend.title = element_blank(), legend.text = element_text(size = 12)) +
+  annotate("text", x = c(1, 2, 3, 4), y = 0.03, label = as.character(ss$n))
+outfig
+
+# want to keep so save to file
+ggsave(filename = "figs/prop_fac_vs_lcl.png", width = 5, height = 4.5, units = "in")
+```
+
+Look at it from vie
+
+```{r}
+flexplot.dat
+```
+
+
+```{r}
+flexs <- left_join(select(dataH, Parasite.species, Host.no, Stage, Def.int, Facultative),
+                   plot.dat)
+flexs <- distinct(flexs)%>%
+  mutate(FacD = if_else(Facultative != "no", "yes", "no"))
+```
+
+```{r}
+ggplot(filter(flexs, Flex.cycle == "Some hosts\nfacultative"),
+       aes(x = Host.no, fill = FacD)) + 
+  geom_bar() + 
+  scale_fill_manual(values = mypalette[1:2]) +
+  facet_grid(~maxLCL.fac) +
+  labs(x = "Host in cycle", y = "Count", fill = "Facultative?")
+```
+
+in 2 host LC, first int host is most commonly left out
+in 3 host LC, second int host is most expendable
+
+No look at growth in facultative stages.
+
+```{r, message=FALSE, warning=FALSE}
+dataL <- mutate(dataL, biovolume = 
+                  if_else(Shape %in% c("cylinder", "thread-like", "whip"), 
+                          pi * (Width/2)^2 * Length, # calculate volume as a cylinder
+                          if_else(Shape %in% c("coiled", "sphere", "ellipsoid"),
+                                  4/3 * pi * Length/2 * Width/4, # calculate volume as a ellipsoid
+                                  Length * Width # calculate volume as area for remaining ribbon, leaf shapes
+                                  )),
+                biovolume = biovolume * 1.1) # covert to biomass with assumed 1.1. g/cm3 tissue density 
+```
+
+For each parasite species, we want to calculate how much growth occurs in each stage. But before doing that, we should eliminate a few troublesome values (species with asexual reproduction as larvae and adult male measurements).
+
+```{r, message=FALSE, warning=FALSE}
+dataL <- filter(dataL, is.na(Asexual))%>% # remove data for asexual species
+  filter( !(Stage == 'adult' & Sex == 'm') ) # remove adult males
+```
+
+Life starts as a propagule, and there are multiple propagule size measurements for a given species. If the egg hatches, we want to take the free larva stage. If it does not hatch, we would like the embryo stage (this is what hatches from the egg and better represents initial size at growth). However, embryo sizes were not always reported, so in those case where embryo size was absent, we took egg size. This assumes that the size difference between embryo and egg is rather small, especially relative to the amount of growth conducted in the first host.
+
+```{r, message=FALSE, warning=FALSE}
+# id species that hatch or not
+eggos <- filter(dataL, Host.no == 0)%>%
+  select(Parasite.species, Egg.hatch)%>%
+  mutate(propagule_selector = if_else(Egg.hatch != "eaten", "free larva", "egg"))%>%
+  select(-Egg.hatch)%>%
+  na.omit%>%distinct()
+
+# determine whether there is a size measurement for embryo or egg stages
+eggos2 <- filter(dataL, Host.no == 0)%>%
+  select(Parasite.species, Stage, biovolume)%>%
+  group_by(Parasite.species, Stage)%>%
+  summarize(x = sum(!is.na(biovolume)))
+
+# combine and spread these two tables
+eggos2 <- left_join(eggos, eggos2)
+eggos2 <- spread(na.omit(eggos2), Stage, x)
+
+# identify the stage where growth starts for each species
+eggos2 <- mutate(eggos2, propagule_selector = if_else(propagule_selector == 'free larva', 'free larva',
+                                                       if_else(embryo > 0, 'embryo', 'egg')))
+
+# add selector variable to main life history table
+eggos2 <- select(eggos2, Parasite.species, propagule_selector)
+dataL <- left_join(dataL, eggos2)
+rm(eggos, eggos2)
+```
+
+Remove propagule measurements that do not best reflect the initial growth size.
+
+```{r, message=FALSE, warning=FALSE}
+dataL <- filter(dataL, !(Host.no == 0 & Stage != propagule_selector))
+```
+
+Average body size for the stages for each species.
+
+```{r, message=FALSE, warning=FALSE}
+dataL.sp <- group_by(dataL, Parasite.species, Host.no, Stage)%>%
+  summarize(biovolume = mean(biovolume, na.rm=T))
+```
+
+Then we calculate absolute and relative body size differences between consecutive life stages, i.e. how much worms grow at a certain life stage.
+
+```{r, message=FALSE, warning=FALSE}
+dataL.sp <- arrange( ungroup(dataL.sp), Parasite.species, Host.no)%>% # arrange by species and host.no
+  mutate(biov = lag(x = biovolume, 1))%>% # make a variable representing size in previous stage
+  mutate(abs_diff = biovolume - biov, # absolute size diff
+         rel_diff = log10(biovolume) - log10(biov)) # relative size diff
+
+# remove growth values for egg stages; arise when calculating 'species B egg' - 'species A adult'
+dataL.sp$abs_diff[which(dataL.sp$Host.no == 0)] <- NA 
+dataL.sp$rel_diff[which(dataL.sp$Host.no == 0)] <- NA
+
+# reduce data to just rows where a growth could be calculated
+dataL.sp <- filter(dataL.sp, !is.na(abs_diff))%>%
+  select(Parasite.species, Host.no, Stage, abs_diff, rel_diff)
+```
+
+```{r}
+combined <- left_join(flexs, dataL.sp)
+```
+
+```{r}
+ggplot(combined, 
+       aes(x = FacD, y = rel_diff)) +
+  geom_boxplot(outlier.color = "white") +
+  geom_jitter(width = 0.2, height = 0, color = "red", alpha = 0.15) +
+  labs(x = "Facultative?", y = "Orders of magnitude increase") + 
+  theme(panel.grid.major.x = element_blank())
+```
+
+```{r}
+combined
+```
+
+ADD IN SLOPE PLOT HERE
