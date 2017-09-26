@@ -3,9 +3,9 @@ title: "Life cycle flexibility"
 output: github_document
 ---
 
-**Background**: I use a [database](http://onlinelibrary.wiley.com/doi/10.1002/ecy.1680/suppinfo) of helminth (parasitic worm) life cycles to examine the diversity of hosts exploited by these parasites. 
+Many parasites have complex life cycles in which they infect multiple hosts in succession. Some parasites have flexible life cycles; they can complete the life cycle with or without infecting certain hosts. I use a [database](http://onlinelibrary.wiley.com/doi/10.1002/ecy.1680/suppinfo) of helminth (parasitic worm) life cycles to explore patterns of life cycle flexibility. What kinds of flexibility are most common? And what might this tell us about how these fascinating life cycles evolved?
 
-
+First, load libraries, set a plot theme, and import data.
 ```{r, message=FALSE, warning=FALSE}
 library(dplyr)
 library(ggplot2)
@@ -28,11 +28,9 @@ dataH <- read.csv(file="data/CLC_database_hosts.csv", header = TRUE, sep=",")
 dataL <- read.csv(file="data/CLC_database_lifehistory.csv", header = TRUE, sep=",")
 ```
 
-Wrangling
+Next, we need to do a bit of wrangling. Add 'life cycle length' variables to main host data table.
 
 ```{r, message=FALSE, warning=FALSE}
-#mosaic.data <- select(dataH, Parasite.species, Host.no, Stage, Def.int, Facultative)%>%distinct()
-
 maxLCL <- group_by(dataH, Parasite.species)%>%
   summarize(maxLCL = max(Host.no))
 minLCL <- filter(dataH, Facultative == "no")%>%
@@ -42,6 +40,8 @@ minLCL <- filter(dataH, Facultative == "no")%>%
 dataH <- left_join(dataH, maxLCL)
 dataH <- left_join(dataH, minLCL)
 ```
+
+For plotting, we want to aggregate the data at the species-level, so let's create a species-level data table that includes life cycle length as a factor.
 
 ```{r}
 # reduce to species level for plot
@@ -54,17 +54,20 @@ plot.dat <- mutate(plot.dat, Flex.cycle =
   mutate(maxLCL.fac = factor(maxLCL.fac, labels = c("1", "2", "3", ">3")))
 ```
 
-Try a stack bar chart.
+We can visualize the number of species with flexible life cycles using a stack bar chart.
 
 ```{r, message=FALSE, warning=FALSE}
-ggplot(plot.dat, aes(x=maxLCL.fac, fill=Flex.cycle)) + 
+mypalette <- mypalette <- brewer.pal(3, "Accent") # colors to use in plot
+
+ggplot(plot.dat, aes(x = maxLCL.fac, fill = Flex.cycle)) + 
   geom_bar() +
+  scale_fill_manual(values = mypalette[1:2]) +
   labs(x = "Life cycle length", y = "Number of species")
 ```
 
-Try making it proportional. First make proportions table to plot.
+Most species in the database have 2-host life cycles, and just a fraction of them are flexible. Parasites with longer life cycles seem to commonly have facultative hosts. Maybe these patterns are clearer when we make a proportional stacked bar chart. To do that, we need to make a proportions table.
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 mos.prop <- group_by(plot.dat, maxLCL.fac, Flex.cycle)%>%
   summarize(n = n())
 t <- tapply(mos.prop$n, INDEX = mos.prop$maxLCL.fac, sum)
@@ -72,13 +75,12 @@ t <- tapply(mos.prop$n, INDEX = mos.prop$maxLCL.fac, sum)
 mos.prop$prop <- mos.prop$n/
   t[match(mos.prop$maxLCL.fac, names(t))]
 rm(t)
+mos.prop
 ```
 
-Then plot.
+About 5% of worms with 2-host cycles have facultative hosts. For 3-host parasites, this jumps to 67%. Plot these values.
 
-```{r}
-mypalette <- mypalette <- brewer.pal(3, "Accent")
-
+```{r, message=FALSE, warning=FALSE}
 ss <- group_by(mos.prop, maxLCL.fac)%>%summarize(n = sum(n)) # sample size for fig
 
 outfig <- ggplot(mos.prop, 
@@ -87,41 +89,65 @@ outfig <- ggplot(mos.prop,
   labs(x = "\nLife cycle length", y = "Proportion of species\n") +
   scale_y_continuous(expand = c(0,0)) +
   scale_fill_manual(values = mypalette[1:2]) +
-  theme(legend.title = element_blank(), legend.text = element_text(size = 12)) +
+  theme(legend.title = element_blank(), legend.text = element_text(size = 8)) +
   annotate("text", x = c(1, 2, 3, 4), y = 0.03, label = as.character(ss$n))
 outfig
 
 # want to keep so save to file
-ggsave(filename = "figs/prop_fac_vs_lcl.png", width = 5, height = 4.5, units = "in")
+ggsave(filename = "figs/prop_fac_vs_lcl.png", width = 5, height = 4, units = "in")
 ```
 
-Look at it from vie
+So the longest life cycles usually include facultative hosts. But which hosts are usually facultative? To answer that, we need to have a table aggregated at the level of 'species stage', i.e. at host 1, host 2, host 3 for species A and so on.
 
-```{r}
-flexplot.dat
-```
-
-
-```{r}
+```{r, message=FALSE, warning=FALSE}
 flexs <- left_join(select(dataH, Parasite.species, Host.no, Stage, Def.int, Facultative),
                    plot.dat)
 flexs <- distinct(flexs)%>%
-  mutate(FacD = if_else(Facultative != "no", "yes", "no"))
+  mutate(Fac_dummy = if_else(Facultative != "no", "yes", "no"))
 ```
 
-```{r}
+Then we make a stacked bar chart for just the species with facultative cycles. We separate the data into panels according to life cycle length. 
+
+```{r, message=FALSE, warning=FALSE}
 ggplot(filter(flexs, Flex.cycle == "Some hosts\nfacultative"),
-       aes(x = Host.no, fill = FacD)) + 
+       aes(x = Host.no, fill = Fac_dummy)) + 
   geom_bar() + 
   scale_fill_manual(values = mypalette[1:2]) +
   facet_grid(~maxLCL.fac) +
   labs(x = "Host in cycle", y = "Count", fill = "Facultative?")
 ```
 
-in 2 host LC, first int host is most commonly left out
-in 3 host LC, second int host is most expendable
+For worms with 2-host cycles, the first intermediate host is more commonly the facultative host. In 3- and 4-host cycles, it is usually the middle hosts that are expendable. In both cases, intermediate hosts are more commonly facultative than definitive hosts, suggesting the reproduction may represent a barrier to eliminating a stage from the cycle. We can re-make this chart by aggregating larval vs adult stages.
 
-No look at growth in facultative stages.
+```{r}
+rig <- filter(flexs, Fac_dummy == "yes")%>%
+  select(Parasite.species, Def.int, Fac_dummy)%>%
+  distinct()
+
+lef <- filter(flexs, Flex.cycle == "Some hosts\nfacultative")%>%
+  select(Parasite.species, Def.int, maxLCL.fac)%>%
+  distinct()
+
+flexs2 <- left_join(lef, rig)
+flexs2 <- mutate(flexs2, Fac_dummy = if_else(is.na(Fac_dummy), 'no', 'yes'))
+rm(lef, rig)
+```
+
+This plot clearly shows that intermediate hosts are more likely to be facultative hosts across all life cycle lengths.
+
+```{r}
+flexs2 <- mutate(flexs2, Def.int = factor(Def.int, levels = c("int", "def")))%>%
+                   mutate(Def.int = factor(Def.int, labels = c("Intermediate", "Definitive") ))
+ggplot(flexs2,
+       aes(x = Def.int, fill = Fac_dummy)) + 
+  geom_bar() + 
+  scale_fill_manual(values = mypalette[1:2]) +
+  facet_grid(~maxLCL.fac) +
+  labs(x = "Host", y = "Count", fill = "Facultative?") +
+  theme(axis.text.x = element_text(size = 11))
+```
+
+Does flexibility come at a price? Let's explore the possibility that parasites grow less in facultative stages.
 
 ```{r, message=FALSE, warning=FALSE}
 dataL <- mutate(dataL, biovolume = 
@@ -141,7 +167,7 @@ dataL <- filter(dataL, is.na(Asexual))%>% # remove data for asexual species
   filter( !(Stage == 'adult' & Sex == 'm') ) # remove adult males
 ```
 
-Life starts as a propagule, and there are multiple propagule size measurements for a given species. If the egg hatches, we want to take the free larva stage. If it does not hatch, we would like the embryo stage (this is what hatches from the egg and better represents initial size at growth). However, embryo sizes were not always reported, so in those case where embryo size was absent, we took egg size. This assumes that the size difference between embryo and egg is rather small, especially relative to the amount of growth conducted in the first host.
+Life starts as a propagule, and there are multiple propagule size measurements for a given species. If the egg hatches, we want to take the free larva stage. If it does not hatch, we would like the embryo stage (this is what hatches from the egg and better represents initial size at growth). However, embryo sizes were not always reported, so in those cases where embryo size was absent, we took egg size. This assumes that the size difference between embryo and egg is rather small, especially relative to the amount of growth conducted in the first host.
 
 ```{r, message=FALSE, warning=FALSE}
 # id species that hatch or not
@@ -201,21 +227,28 @@ dataL.sp <- filter(dataL.sp, !is.na(abs_diff))%>%
   select(Parasite.species, Host.no, Stage, abs_diff, rel_diff)
 ```
 
-```{r}
-combined <- left_join(flexs, dataL.sp)
+Combine life cycle and growth tables, and compare growth in facultative vs obligate stages.
+
+```{r, message=FALSE, warning=FALSE}
+lc_growth <- left_join(flexs, dataL.sp)
 ```
 
-```{r}
-ggplot(combined, 
-       aes(x = FacD, y = rel_diff)) +
+```{r, message=FALSE, warning=FALSE}
+ggplot(lc_growth, 
+       aes(x = Fac_dummy, y = rel_diff)) +
   geom_boxplot(outlier.color = "white") +
   geom_jitter(width = 0.2, height = 0, color = "red", alpha = 0.15) +
   labs(x = "Facultative?", y = "Orders of magnitude increase") + 
   theme(panel.grid.major.x = element_blank())
 ```
 
+Parasites grow more in obligate hosts than facultative ones. On average, they increase ~136-fold in obligate hosts and ~3-fold in facultative hosts.
+
 ```{r}
-combined
+group_by(lc_growth, Fac_dummy)%>%
+  summarize(fold_size_inc = mean(rel_diff, na.rm=T))%>%
+  mutate(fold_size_inc = 10^fold_size_inc)
 ```
+
 
 ADD IN SLOPE PLOT HERE
