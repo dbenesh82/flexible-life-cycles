@@ -244,11 +244,51 @@ ggplot(lc_growth,
 
 Parasites grow more in obligate hosts than facultative ones. On average, they increase ~136-fold in obligate hosts and ~3-fold in facultative hosts.
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 group_by(lc_growth, Fac_dummy)%>%
   summarize(fold_size_inc = mean(rel_diff, na.rm=T))%>%
   mutate(fold_size_inc = 10^fold_size_inc)
 ```
 
+We can also look at the limited growth of facultative stages in a slopegraph. We need to re-calculate species body volume averages, so that it includes propagule stages.
 
-ADD IN SLOPE PLOT HERE
+```{r, message=FALSE, warning=FALSE}
+dataL.sp <- group_by(dataL, Parasite.species, Host.no, Stage)%>%
+  summarize(biovolume = mean(biovolume, na.rm=T))
+```
+
+And then re-combine it with the life cycle data.
+
+```{r, message=FALSE, warning=FALSE}
+slope.plot <- full_join(lc_growth, dataL.sp)%>%arrange(Parasite.species, Host.no)
+
+# add variables for plots
+slope.plot <- mutate(slope.plot, 
+                   Host.nofac = factor(Host.no, labels = c("propagule", "1st", "2nd", "3rd", "4th", "5th")),
+                   trans.to.fac = "no")
+
+slope.plot$trans.to.fac[which(slope.plot$Facultative != "no") - 1] <- "yes" # create variable for coloring the lines
+```
+
+The plot below shows how parasite body size changes from host to host. Lines connect stages in successive hosts for each parasite species. Steep slopes indicate a parasite grows substantially in a given host. When we highlight the stages that are facultative, we see comparatively flat slopes. Parasites do not grow much in facultative hosts.
+
+```{r, message=FALSE, warning=FALSE}
+outfig <- ggplot(data = slope.plot,
+       aes(x = Host.nofac, y = log10(biovolume), 
+           group = Parasite.species)) +
+  geom_point(size = 3, alpha = 0.1, color = "gray") +
+  geom_line(aes(color = trans.to.fac, alpha = trans.to.fac)) + 
+  labs(x="\nHost",y="Log(Biomass)\n") +
+  guides(color = FALSE, alpha = FALSE) +
+  scale_alpha_discrete(range = c(0.15, 1)) +
+  scale_color_manual(values = c("gray", "red")) +
+  scale_x_discrete(expand=c(0.05,0.05)) +
+  annotate("text", x = 4.5, y = -4.5, label = "Transmission to facultative host", 
+           size = 7, color = "red")
+outfig
+
+# want to keep so save to file
+ggsave(filename = "figs/lc_flex_slopegraph.png", width = 7, height = 5, units = "in")
+```
+
+In summary, life cycle flexibility increases with life cycle length, perhaps more than we would expect by chance. Usually, the facultative hosts are intermediate hosts. Finally, parasites usually do not grow much in their facultative hosts.
