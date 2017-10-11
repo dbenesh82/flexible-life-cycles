@@ -1,0 +1,1 @@
+These two data files compose the helminth life cycle database. More information can be found [here](http://onlinelibrary.wiley.com/doi/10.1002/ecy.1680/suppinfo).
