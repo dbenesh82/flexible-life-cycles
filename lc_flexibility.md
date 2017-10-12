@@ -40,6 +40,8 @@ dataH <- left_join(dataH, maxLCL)
 dataH <- left_join(dataH, minLCL)
 ```
 
+### Patterns of flexibility
+
 For plotting, we want to aggregate the data at the species-level, so let's create a species-level data table that includes life cycle length as a factor.
 
 ``` r
@@ -136,7 +138,7 @@ ggplot(filter(flexs, Flex.cycle == "Some hosts\nfacultative"),
 
 ![](lc_flexibility_files/figure-markdown_github-ascii_identifiers/unnamed-chunk-8-1.png)
 
-For worms with 2-host cycles, the first intermediate host is more commonly the facultative host. In 3- and 4-host cycles, it is usually the middle hosts that are expendable. In both cases, intermediate hosts are more commonly facultative than definitive hosts, suggesting the reproduction may represent a barrier to eliminating a stage from the cycle. We can re-make this chart by aggregating larval vs adult stages.
+For worms with 2-host cycles, the first intermediate host is more commonly the facultative host. In 3- and 4-host cycles, it is usually the middle hosts that are expendable. In both cases, intermediate hosts are more commonly facultative than definitive hosts, suggesting reproduction may be a barrier to eliminating a stage from the cycle. We can re-make this chart by aggregating larval vs adult stages.
 
 ``` r
 rig <- filter(flexs, Fac_dummy == "yes")%>%
@@ -167,6 +169,8 @@ ggplot(flexs2,
 ```
 
 ![](lc_flexibility_files/figure-markdown_github-ascii_identifiers/unnamed-chunk-10-1.png)
+
+### Costs of flexibility
 
 Does flexibility come at a price? Let's explore the possibility that parasites grow less in facultative stages.
 
@@ -324,4 +328,4 @@ outfig
 ggsave(filename = "figs/lc_flex_slopegraph.png", width = 7, height = 5, units = "in")
 ```
 
-In summary, life cycle flexibility increases with life cycle length, perhaps more than we would expect by chance. Usually, the facultative hosts are intermediate hosts. Finally, parasites usually do not grow much in their facultative hosts.
+In summary, life cycle flexibility increases with life cycle length, perhaps more than we would expect by chance. Usually, the facultative hosts are intermediate hosts. Finally, parasites do not grow much in their facultative hosts.
